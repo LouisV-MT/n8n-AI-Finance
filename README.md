@@ -66,6 +66,7 @@ OCR_SPACE_API_KEY="your_ocr_key"
 
 # --- WhatsApp ---
 WHATSAPP_PHONE_ID="your_whatsapp_phone_id"
+# ----------------
 2. Import Workflows
 Import the two JSON files into your n8n instance:
 
