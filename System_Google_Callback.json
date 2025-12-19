@@ -1,0 +1,456 @@
+{
+  "name": "System_Google_Callback",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "google-callback",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -480,
+        80
+      ],
+      "id": "633658f5-a341-4271-a11d-01265da1faf3",
+      "name": "Webhook",
+      "webhookId": "d4b05889-c474-4886-916e-c4262c1b27bb"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/drive/v3/files",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "name = 'YOUR AI TRACKER' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        640,
+        80
+      ],
+      "id": "7a14f48d-a589-4a57-9ac4-cc4fbc0a94b0",
+      "name": "Search Drive",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "wISstPvCxMzIz3n5",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://oauth2.googleapis.com/token",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "{{ $env.GOOGLE_CLIENT_ID }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "{{ $env.GOOGLE_CLIENT_SECRET_CALLBACK }}"
+            },
+            {
+              "name": "grant_type",
+              "value": "refresh_token"
+            },
+            {
+              "name": "refresh_token",
+              "value": "={{ $('Exchange Auth Code').first().json.refresh_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        416,
+        80
+      ],
+      "id": "382fa36b-a77e-42f4-ad2c-570303a4f5ea",
+      "name": "Get Access Token"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a0a6def7-095c-408a-aa75-fefb36426aa8",
+              "leftValue": "={{ $json.files.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        864,
+        80
+      ],
+      "id": "31c23eb8-e7ce-47c0-8ce0-ff1ec1289a51",
+      "name": "Check File Exists"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"properties\": {\n    \"title\": \"YOUR AI TRACKER\"\n  },\n  \"sheets\": [\n    {\n      \"properties\": { \n        \"title\": \"Transactions\", \n        \"gridProperties\": {\"frozenRowCount\": 1} \n      },\n      \"data\": [\n        {\n          \"startRow\": 0, \"startColumn\": 0,\n          \"rowData\": [{\n            \"values\": [\n              { \"userEnteredValue\": { \"stringValue\": \"Date\" } },\n              { \"userEnteredValue\": { \"stringValue\": \"Month\" } },\n              { \"userEnteredValue\": { \"stringValue\": \"Item\" } },\n              { \"userEnteredValue\": { \"stringValue\": \"Category\" } },\n              { \"userEnteredValue\": { \"stringValue\": \"Cost\" } },\n              { \"userEnteredValue\": { \"stringValue\": \"Notes\" } }\n            ]\n          }]\n        }\n      ]\n    },\n    {\n      \"properties\": { \n        \"title\": \"Budget_Limits\", \n        \"gridProperties\": {\"frozenRowCount\": 1} \n      },\n      \"data\": [\n        {\n          \"startRow\": 0, \"startColumn\": 0,\n          \"rowData\": [{\n            \"values\": [\n              { \"userEnteredValue\": { \"stringValue\": \"Category\" } },\n              { \"userEnteredValue\": { \"stringValue\": \"Monthly Limit\" } }\n            ]\n          }]\n        }\n      ]\n    },\n    { \"properties\": { \"title\": \"Dashboard\" } }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1088,
+        0
+      ],
+      "id": "031362d6-217d-40c2-8aab-2081520309a9",
+      "name": "Create Sheet",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "wISstPvCxMzIz3n5",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "=799924776547660",
+        "recipientPhoneNumber": "={{ $('Webhook').first().json.query.state }}",
+        "textBody": "={{ \"*Setup Complete!* 🚀\\n\\nI have successfully connected to your spreadsheet:\\n📄 *YOUR AI TRACKER*\\n\\n---------------------------------\\n🤖 *HOW TO USE ME*\\n---------------------------------\\n\\n📸 *Scan a Receipt*\\nJust send me a photo! I will extract the data and log it.\\n\\n💰 *Set Budgets*\\nType ```Budget``` to set your monthly spending limits.\\n\\n📊 *Check Spending*\\nType ```Report``` to see how much you have spent.\\n\\n❓ *Need Help?*\\nType ```Menu``` to see this list again.\\n\\n---------------------------------\\n*Ready when you are! Try sending a receipt photo now.* 👇\" }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        2208,
+        80
+      ],
+      "id": "db326061-6a26-4c43-a74f-8a053e5d0ff8",
+      "name": "Send Confirmation",
+      "webhookId": "28b78209-593d-4ded-bae9-4764fe08167b",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "Ox3ujJuG5DJL5jmX",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.spreadsheetId }}:batchUpdate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get Access Token').item.json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"requests\": [\n    {\n      \"updateCells\": {\n        \"rows\": [\n          {\n            \"values\": [\n              { \"userEnteredValue\": { \"stringValue\": \"SELECT MONTH:\" } },\n              { \"userEnteredValue\": { \"stringValue\": \"October\" } },\n              { \"userEnteredValue\": { \"stringValue\": \" \" } },\n              { \"userEnteredValue\": { \"stringValue\": \" \" } },\n              { \"userEnteredValue\": { \"stringValue\": \" \" } },\n              { \"userEnteredValue\": { \"stringValue\": \"MONTHLY TRENDS (By Category)\" } }\n            ]\n          },\n          {\n            \"values\": [\n              { \"userEnteredValue\": { \"stringValue\": \"BREAKDOWN\" } },\n              { \"userEnteredValue\": { \"stringValue\": \" \" } },\n              { \"userEnteredValue\": { \"stringValue\": \" \" } },\n              { \"userEnteredValue\": { \"stringValue\": \" \" } },\n              { \"userEnteredValue\": { \"stringValue\": \" \" } },\n              { \"userEnteredValue\": { \n                \"formulaValue\": \"=QUERY(Transactions!B:E, \\\"select B, sum(E) where B is not null group by B pivot D\\\", 1)\" \n              } }\n            ]\n          },\n          {\n            \"values\": [\n              { \"userEnteredValue\": { \n                \"formulaValue\": \"=QUERY(Transactions!B:E, \\\"select D, sum(E) where B = '\\\" & B1 & \\\"' group by D order by D label D 'Category', sum(E) 'Total'\\\", 1)\" \n              } }\n            ]\n          }\n        ],\n        \"fields\": \"userEnteredValue\",\n        \"start\": { \n          \"sheetId\": {{ $('Create Sheet').first().json.sheets.find(s => s.properties.title === \"Dashboard\").properties.sheetId }}, \n          \"rowIndex\": 0, \n          \"columnIndex\": 0 \n        }\n      }\n    },\n    {\n      \"setDataValidation\": {\n        \"range\": {\n          \"sheetId\": {{ $('Create Sheet').first().json.sheets.find(s => s.properties.title === \"Dashboard\").properties.sheetId }},\n          \"startRowIndex\": 0, \"endRowIndex\": 1,\n          \"startColumnIndex\": 1, \"endColumnIndex\": 2\n        },\n        \"rule\": {\n          \"condition\": {\n            \"type\": \"ONE_OF_RANGE\",\n            \"values\": [{ \"userEnteredValue\": \"=Transactions!B2:B\" }]\n          },\n          \"showCustomUi\": true\n        }\n      }\n    },\n    {\n      \"addChart\": {\n        \"chart\": {\n          \"spec\": {\n            \"title\": \"Category Breakdown (Selected Month)\",\n            \"pieChart\": { \"legendPosition\": \"RIGHT_LEGEND\", \"threeDimensional\": true, \"domain\": { \"sourceRange\": { \"sources\": [{ \"sheetId\": {{ $('Create Sheet').first().json.sheets.find(s => s.properties.title === \"Dashboard\").properties.sheetId }}, \"startRowIndex\": 3, \"endRowIndex\": 20, \"startColumnIndex\": 0, \"endColumnIndex\": 1 }] } }, \"series\": { \"sourceRange\": { \"sources\": [{ \"sheetId\": {{ $('Create Sheet').first().json.sheets.find(s => s.properties.title === \"Dashboard\").properties.sheetId }}, \"startRowIndex\": 3, \"endRowIndex\": 20, \"startColumnIndex\": 1, \"endColumnIndex\": 2 }] } } }\n          },\n          \"position\": { \"overlayPosition\": { \"anchorCell\": { \"sheetId\": {{ $('Create Sheet').first().json.sheets.find(s => s.properties.title === \"Dashboard\").properties.sheetId }}, \"rowIndex\": 2, \"columnIndex\": 0 }, \"widthPixels\": 450, \"heightPixels\": 350 } }\n        }\n      }\n    },\n    {\n      \"addChart\": {\n        \"chart\": {\n          \"spec\": {\n            \"title\": \"Spending Trends (Stacked)\",\n            \"basicChart\": { \"chartType\": \"COLUMN\", \"legendPosition\": \"BOTTOM_LEGEND\", \"stackedType\": \"STACKED\", \"domains\": [{ \"domain\": { \"sourceRange\": { \"sources\": [{ \"sheetId\": {{ $('Create Sheet').first().json.sheets.find(s => s.properties.title === \"Dashboard\").properties.sheetId }}, \"startRowIndex\": 2, \"endRowIndex\": 14, \"startColumnIndex\": 5, \"endColumnIndex\": 6 }] } } }], \"series\": [ { \"series\": { \"sourceRange\": { \"sources\": [{ \"sheetId\": {{ $('Create Sheet').first().json.sheets.find(s => s.properties.title === \"Dashboard\").properties.sheetId }}, \"startRowIndex\": 2, \"endRowIndex\": 14, \"startColumnIndex\": 6, \"endColumnIndex\": 7 }] } }, \"targetAxis\": \"LEFT_AXIS\" }, { \"series\": { \"sourceRange\": { \"sources\": [{ \"sheetId\": {{ $('Create Sheet').first().json.sheets.find(s => s.properties.title === \"Dashboard\").properties.sheetId }}, \"startRowIndex\": 2, \"endRowIndex\": 14, \"startColumnIndex\": 7, \"endColumnIndex\": 8 }] } }, \"targetAxis\": \"LEFT_AXIS\" }, { \"series\": { \"sourceRange\": { \"sources\": [{ \"sheetId\": {{ $('Create Sheet').first().json.sheets.find(s => s.properties.title === \"Dashboard\").properties.sheetId }}, \"startRowIndex\": 2, \"endRowIndex\": 14, \"startColumnIndex\": 8, \"endColumnIndex\": 9 }] } }, \"targetAxis\": \"LEFT_AXIS\" }, { \"series\": { \"sourceRange\": { \"sources\": [{ \"sheetId\": {{ $('Create Sheet').first().json.sheets.find(s => s.properties.title === \"Dashboard\").properties.sheetId }}, \"startRowIndex\": 2, \"endRowIndex\": 14, \"startColumnIndex\": 9, \"endColumnIndex\": 10 }] } }, \"targetAxis\": \"LEFT_AXIS\" }, { \"series\": { \"sourceRange\": { \"sources\": [{ \"sheetId\": {{ $('Create Sheet').first().json.sheets.find(s => s.properties.title === \"Dashboard\").properties.sheetId }}, \"startRowIndex\": 2, \"endRowIndex\": 14, \"startColumnIndex\": 10, \"endColumnIndex\": 11 }] } }, \"targetAxis\": \"LEFT_AXIS\" } ] }\n          },\n          \"position\": { \"overlayPosition\": { \"anchorCell\": { \"sheetId\": {{ $('Create Sheet').first().json.sheets.find(s => s.properties.title === \"Dashboard\").properties.sheetId }}, \"rowIndex\": 2, \"columnIndex\": 5 }, \"widthPixels\": 700, \"heightPixels\": 350 } }\n        }\n      }\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1312,
+        0
+      ],
+      "id": "5bc6b34c-5bb6-4b33-bece-2a89bb4e8530",
+      "name": "Draw Charts"
+    },
+    {
+      "parameters": {
+        "command": "=sed -i '/\"phone\":\"{{ $('Webhook').first().json.query.state }}\"/d' /home/node/.n8n/users.json;\n\n# 2. Append new entry (Explicitly constructing the JSON so we don't save garbage)\necho '{\"phone\":\"{{ $('Webhook').first().json.query.state }}\", \"refresh_token\":\"{{ $('Exchange Auth Code').first().json.refresh_token }}\", \"sheet_id\":\"PENDING\"}' >> /home/node/.n8n/users.json"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        192,
+        80
+      ],
+      "id": "1927838d-f4d6-4d17-85c6-f8961786556a",
+      "name": "DB: save user"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://oauth2.googleapis.com/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "{{ $env.GOOGLE_CLIENT_ID }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "{{ $env.GOOGLE_CLIENT_SECRET_MAIN }}"
+            },
+            {
+              "name": "grant_type",
+              "value": "authorization_code"
+            },
+            {
+              "name": "redirect_uri",
+              "value": "{{ $env.GOOGLE_REDIRECT_URI }}"
+            },
+            {
+              "name": "code",
+              "value": "={{ $json.query.code }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -256,
+        80
+      ],
+      "id": "2420a360-3417-4614-8081-13daac469011",
+      "name": "Exchange Auth Code"
+    },
+    {
+      "parameters": {
+        "command": "=echo '{{ JSON.stringify({ phone: $('Webhook').item.json.query.state, refresh_token: $json.refresh_token, sheet_id: \"PENDING\" }) }}' >> /home/node/.n8n/users.json"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -32,
+        80
+      ],
+      "id": "71d26407-b4b0-4766-ba7e-73b3fcf67e8e",
+      "name": "Read User DB"
+    },
+    {
+      "parameters": {
+        "command": "cat /home/node/.n8n/users.json"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1536,
+        80
+      ],
+      "id": "aa556dea-4c71-4747-92e7-1704162f0eb5",
+      "name": "Read Final DB"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get Context\nconst phone = $('Webhook').first().json.query.state;\nconst fileContent = $('Read Final DB').first().json.stdout || \"\";\n\n// 2. Get Sheet ID (Safely)\nlet sheetId;\ntry {\n    // Try getting new sheet ID\n    sheetId = $('Create Sheet').first().json.spreadsheetId;\n} catch (e) {\n    // Fallback to existing file ID\n    // Note: Ensure your Search node is actually named \"Search Drive\"\n    try {\n        sheetId = $('Search Drive').first().json.files[0].id;\n    } catch (err) {\n        sheetId = \"ERROR_NO_SHEET_FOUND\";\n    }\n}\n\n// 3. Process Line-by-Line\n// The file is now a list of simple JSON objects: {\"phone\":\"...\", ...}\nconst lines = fileContent.split('\\n').filter(line => line.trim() !== \"\");\n\nconst newLines = lines.map(line => {\n    try {\n        // Parse the line directly\n        const userObj = JSON.parse(line);\n\n        // Check if this is our user\n        // We use loose equality (==) to match string \"123\" with number 123 just in case\n        if (userObj.phone == phone) {\n            userObj.sheet_id = sheetId; // Update the ID!\n        }\n\n        return JSON.stringify(userObj);\n    } catch (e) {\n        // If line is garbage, keep it (or discard it)\n        return line;\n    }\n});\n\n// 4. Output\nreturn {\n    json: {\n        new_content: newLines.join('\\n')\n    }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        80
+      ],
+      "id": "7589dbcd-c03f-4a9c-9244-e617fb469141",
+      "name": "Update User File"
+    },
+    {
+      "parameters": {
+        "command": "=echo '{{ $json.new_content }}' > /home/node/.n8n/users.json"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1984,
+        80
+      ],
+      "id": "5239ec1c-db29-45db-97fd-86700bf8e72d",
+      "name": "Write Final DB"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Exchange Auth Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Drive": {
+      "main": [
+        [
+          {
+            "node": "Check File Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Access Token": {
+      "main": [
+        [
+          {
+            "node": "Search Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check File Exists": {
+      "main": [
+        [
+          {
+            "node": "Create Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read Final DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Sheet": {
+      "main": [
+        [
+          {
+            "node": "Draw Charts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draw Charts": {
+      "main": [
+        [
+          {
+            "node": "Read Final DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: save user": {
+      "main": [
+        [
+          {
+            "node": "Get Access Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Exchange Auth Code": {
+      "main": [
+        [
+          {
+            "node": "Read User DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read User DB": {
+      "main": [
+        [
+          {
+            "node": "DB: save user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Final DB": {
+      "main": [
+        [
+          {
+            "node": "Update User File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update User File": {
+      "main": [
+        [
+          {
+            "node": "Write Final DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Final DB": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "9413ed53-c2ca-40fe-bd67-affd0bc3fa51",
+  "meta": {
+    "instanceId": "0cbda407c1f0710a8bcbc6a5184d5adba30950eb714dcd47c31af19c578aa4a2"
+  },
+  "id": "nqt5nCCSAe8tyDdg",
+  "tags": []
+}

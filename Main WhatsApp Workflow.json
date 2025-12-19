@@ -1,0 +1,1370 @@
+{
+  "name": "Main WhatsApp Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "=799924776547660",
+        "recipientPhoneNumber": "={{ $json.phone }}",
+        "textBody": "=\"Welcome! To start tracking your finances, please link your Google Account so I can create your spreadsheet: {{ $json.auth_url }} (Click this on your computer for the smoothest setup!)\"",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        -112
+      ],
+      "id": "bfbe0a2c-7523-4dec-a48f-1ed00faeb5ca",
+      "name": "Send message",
+      "webhookId": "79be0440-2e77-4116-872c-35b638782999",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "Ox3ujJuG5DJL5jmX",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {
+          "messageStatusUpdates": []
+        }
+      },
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        80
+      ],
+      "id": "5009a92a-55b9-435d-84cc-6cfba777c6f7",
+      "name": "Trigger: Incoming Message",
+      "webhookId": "31ae6cf1-27c0-414e-9e4c-66bb830da7d6",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "Ug198wPQCxNLA5Pw",
+          "name": "WhatsApp OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "touch /home/node/.n8n/users.json && cat /home/node/.n8n/users.json"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        224,
+        80
+      ],
+      "id": "dd584eeb-dc6b-4d89-a3f5-fc228fbef7d7",
+      "name": "DB: Read User File"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get raw text\nconst commandNode = $('DB: Read User File').first();\nconst fileContent = commandNode && commandNode.json ? commandNode.json.stdout : \"\";\n\n// 2. Parse Line-by-Line (Robust Method)\n// This handles the \"{...}\\n{...}\" format perfectly\nconst users = fileContent\n  .split('\\n')                      // Split into separate lines\n  .map(line => line.trim())         // Clean whitespace\n  .filter(line => line.length > 0)  // Remove empty lines\n  .map(line => {\n    try {\n      // If the line has a trailing comma (from old logic), remove it\n      if (line.endsWith(',')) line = line.slice(0, -1);\n      return JSON.parse(line);\n    } catch (e) {\n      return null; // Ignore broken lines\n    }\n  })\n  .filter(u => u !== null);         // Keep only valid users\n\n// 3. Find Current User\n// Get sender phone from Trigger\nconst triggerData = $('Trigger: Incoming Message').first().json;\n// Handle both \"messages\" array and direct output formats\nconst currentPhone = triggerData.messages?.[0]?.from || triggerData.from || \"UNKNOWN\";\n\n// 4. Determine Status\n// Use '==' to allow matching string \"123\" with number 123\nconst currentUser = users.find(u => u.phone == currentPhone);\n\nif (!currentUser) {\n  return { status: \"NEW_USER\", phone: currentPhone, debug: \"User not found in file\" };\n} else if (currentUser.sheet_id === \"PENDING\") {\n  return { status: \"NEEDS_SHEET\", token: currentUser.refresh_token, phone: currentPhone };\n} else {\n  return { status: \"READY\", token: currentUser.refresh_token, sheet_id: currentUser.sheet_id, phone: currentPhone };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        80
+      ],
+      "id": "f5ea7f9a-4658-4187-b9c8-b9129c07ebf8",
+      "name": "Logic: Identify User"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "NEW_USER",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "f542b09b-e324-4788-8b71-b0e7d8e20636"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "New User"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "dd3a41b1-5859-4e22-b493-401bf61d4a61",
+                    "leftValue": "={{ $json.sheet_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "empty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Sheet Missing"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "97c283c5-ee96-4375-91ab-899e3badcfdd",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "READY",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Ready"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        672,
+        64
+      ],
+      "id": "7d8b1675-f527-45de-a5a5-84a8d36ce6bf",
+      "name": "Router: User Status"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "06c7c32d-17d9-4340-aebd-86a7c587587d",
+              "name": "auth_url",
+              "value": "=https://accounts.google.com/o/oauth2/v2/auth?client_id={{ $env.GOOGLE_CLIENT_ID }}&redirect_uri={{ $env.GOOGLE_REDIRECT_URI }}&response_type=code&scope=https://www.googleapis.com/auth/spreadsheets%20https://www.googleapis.com/auth/drive.metadata.readonly&access_type=offline&prompt=consent&state={{ $json.phone }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        896,
+        -112
+      ],
+      "id": "6ff3776a-26f5-458f-83dc-c5dc4febba71",
+      "name": "WhatsApp: Send Auth Invite"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Trigger: Incoming Message').item.json.messages[0].text.body.toLowerCase() }}",
+                    "rightValue": "budget",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "51bd2c4e-1e0a-4b72-bc44-5863b9b714b1"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Budget"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "7fbe6e1b-ceaf-49f8-9008-574e3978356c",
+                    "leftValue": "={{ $('Trigger: Incoming Message').item.json.messages[0].text.body.toLowerCase() }}",
+                    "rightValue": "report",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Report"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "230d0311-372c-462f-ae2b-26170a36cc3b",
+                    "leftValue": "={{ $('Trigger: Incoming Message').item.json.messages[0].text.body.toLowerCase() }}",
+                    "rightValue": "menu",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Menu"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 2
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        1120,
+        1008
+      ],
+      "id": "bf6b80e7-df7a-4371-926e-3121a1c89987",
+      "name": "Router: Text Commands"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "=799924776547660",
+        "recipientPhoneNumber": "={{ $('Trigger: Incoming Message').first().json.messages[0].from }}",
+        "textBody": "🤖 *FINANCE BOT MENU* ---------------------------------  Here is what I can do for you:  📸 *Scan a Receipt* Just send me a photo! I will extract the data and log it to your *Transactions* sheet.  💰 *Set Budgets* Type ```Budget``` to set or change your monthly spending limits.  📊 *Check Spending* Type ```Report``` to see how much you have spent this month.  ❓ *Need Help?* Type ```Menu``` to see this list again.  --------------------------------- *Ready! Send a command or a photo.* 👇",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1344,
+        1216
+      ],
+      "id": "f289ced9-df28-4015-b847-11abbaffa963",
+      "name": "WhatsApp: Send Menu",
+      "webhookId": "b7265c53-de6a-4a34-9a9c-7eeff70d1ec1",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "Ox3ujJuG5DJL5jmX",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7e971907-8488-4e4d-b8bc-1474feb24116",
+              "leftValue": "={{ $('Trigger: Incoming Message').item.json.messages[0].type }}",
+              "rightValue": "image",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        688
+      ],
+      "id": "a9ac480e-1c68-487b-9c40-b5ea21b24f0a",
+      "name": "Check: Image or Text?"
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v21.0/{{ $('Trigger: Incoming Message').item.json.messages[0].image.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1120,
+        400
+      ],
+      "id": "3c7cca42-5590-4aeb-8078-a567a0944724",
+      "name": "Get Media URL",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kpWE5vDunpjhpbAo",
+          "name": "Meta System User Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1344,
+        400
+      ],
+      "id": "dd335ca1-243b-481f-8706-1562ccab917e",
+      "name": "Download Image",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kpWE5vDunpjhpbAo",
+          "name": "Meta System User Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "resize",
+        "width": 1600,
+        "height": {},
+        "resizeOption": "onlyIfLarger",
+        "options": {
+          "format": "jpeg",
+          "quality": 80
+        }
+      },
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        2016,
+        320
+      ],
+      "id": "a94220a3-a158-453b-affe-4e7ddd3c5c09",
+      "name": "Resize for OCR"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.ocr.space/parse/image",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "base64Image",
+              "value": "={{ $('Convert Image').item.json.my_image }}"
+            },
+            {
+              "name": "filetype",
+              "value": "JPG"
+            },
+            {
+              "name": "OCREngine",
+              "value": "2"
+            },
+            {
+              "name": "apikey",
+              "value": "{{ $env.OCR_SPACE_API_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2688,
+        400
+      ],
+      "id": "d3f5d3cf-f8bb-4e46-964d-3a37c4091ed5",
+      "name": "OCR Scan"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"google/gemma-3-12b-it:free\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n\"text\": \"You are a finance assistant. I will provide raw OCR text from a receipt and the original image. Your job is to extract EVERY SINGLE line item.\\n\\nINSTRUCTIONS:\\n1. Look at the image to verify prices and names.\\n2. Do NOT summarize or group items. If there are 3 entries for 'Pork Stomach', list 3 separate rows.\\n3. Extract the Date, Item Name, and Cost for each line item.\\n4. Categorize each item into: 'Food', 'Snack', 'Household', 'Transport', 'Other'.\\n5. For 'Month', extract the full month name (e.g., 'October').\\n6. Return ONLY a JSON array. Do not talk.\\n\\nJSON SCHEMA:\\n[{\\\"date\\\": \\\"YYYY-MM-DD\\\", \\\"month\\\": \\\"String\\\", \\\"item\\\": \\\"String\\\", \\\"category\\\": \\\"String\\\", \\\"cost\\\": Number, \\\"notes\\\": \\\"String\\\"}]\\n\\nOCR RAW TEXT:\\n{{ JSON.stringify($('OCR Scan').item.json.ParsedResults[0].ParsedText).slice(1, -1) }}\"\n        },\n        {\n          \"type\": \"image_url\",\n          \"image_url\": {\n            \"url\": \"{{ $('Convert Image').item.json.my_image }}\"\n          }\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2912,
+        400
+      ],
+      "id": "c805874a-52c4-4cfd-bcaa-b21511c02e93",
+      "name": "AI Processor",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "KeE2qwDENE2r3xU7",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get AI content\nconst rawContent = $('AI Processor').first().json.choices[0].message.content;\nconst cleanJson = rawContent.replace(/```json\\n|```/g, '');\nconst items = JSON.parse(cleanJson);\n\n// 2. Aggregate Duplicates\nconst aggregatedItems = {};\n\nitems.forEach(item => {\n    const name = item.item.trim();\n    if (aggregatedItems[name]) {\n        aggregatedItems[name].cost += item.cost;\n        if (item.notes && !aggregatedItems[name].notes.includes(item.notes)) {\n             aggregatedItems[name].notes += \"; \" + item.notes;\n        }\n    } else {\n        aggregatedItems[name] = item;\n    }\n});\n\nconst finalList = Object.values(aggregatedItems);\n\n// 3. Prepare Spreadsheet Rows (Data)\nconst rows = finalList.map(i => [\n  i.date,\n  i.month,\n  i.item,\n  i.category,\n  Number(i.cost.toFixed(2)), \n  i.notes || \"\"\n]);\n\n// 4. Prepare WhatsApp Message (Visuals)\n// We build a nice string using emojis and newlines\nlet reportText = \"✅ *Receipt Saved!*\\n\\n\";\nlet totalCost = 0;\n\nfinalList.forEach(i => {\n    const cost = Number(i.cost.toFixed(2));\n    totalCost += cost;\n    // Format: • Item Name ($Cost) - [Category]\n    reportText += `• ${i.item}\\n   └ $${cost}  |  _${i.category}_\\n`;\n});\n\nreportText += `\\n💰 *Total Saved:* $${totalCost.toFixed(2)}`;\nreportText += `\\n\\n*Mistake?* Reply: \"Change [Item] to [Category]\"`;\n\n// 5. Output Both\nreturn {\n  json: {\n    spreadsheet_payload: { values: rows },\n    report_message: reportText\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3360,
+        400
+      ],
+      "id": "0aaf88dd-99c3-4a81-bddd-7258022076b8",
+      "name": "Clean JSON"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Logic: Identify User').first().json.sheet_id }}/values/Transactions!A1:append",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "valueInputOption",
+              "value": "USER_ENTERED"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get Access Token1').item.json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.spreadsheet_payload }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3584,
+        400
+      ],
+      "id": "d140e756-3b14-4ac7-a47d-dc82e4007acb",
+      "name": "Save to Sheet"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://oauth2.googleapis.com/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "{{ $env.GOOGLE_CLIENT_ID }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "{{ $env.GOOGLE_CLIENT_SECRET_MAIN }}"
+            },
+            {
+              "name": "grant_type",
+              "value": "refresh_token"
+            },
+            {
+              "name": "refresh_token",
+              "value": "={{ $('Logic: Identify User').first().json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3136,
+        400
+      ],
+      "id": "10098a5a-cff7-4927-93ad-2e570c6fd30a",
+      "name": "Get Access Token1"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "799924776547660",
+        "recipientPhoneNumber": "={{ $('Trigger: Incoming Message').first().json.messages[0].from }}",
+        "textBody": "={{ $json.final_message }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        4256,
+        400
+      ],
+      "id": "60be6e7f-a584-4168-9f91-0e8861d67eaf",
+      "name": "Send Receipt Report",
+      "webhookId": "91194563-24fd-42be-8818-eacd53a09e82",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "Ox3ujJuG5DJL5jmX",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"google/gemma-3-12b-it:free\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a data parser. Extract the budget category and amount from the user's message.\\n\\nUSER MESSAGE:\\n{{ $('Trigger: Incoming Message').item.json.messages[0].text.body }}\\n\\nINSTRUCTIONS:\\n1. Extract 'category' (e.g., Food, Transport). Capitalize the first letter.\\n2. Extract 'amount' (number).\\n3. If information is missing, set them to null.\\n4. Return ONLY JSON.\\n\\nJSON SCHEMA:\\n{\\\"category\\\": \\\"String or null\\\", \\\"amount\\\": Number or null}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1344,
+        736
+      ],
+      "id": "af8a8edc-74b2-4074-a518-828d2b38e561",
+      "name": "AI: Parse Budget",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "KeE2qwDENE2r3xU7",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get raw content from AI safely\nconst response = $('AI: Parse Budget').first().json.choices[0].message.content;\n\n// 2. Clean Markdown\nconst cleanJson = response.replace(/```json\\n|```/g, '').trim();\n\n// FIX: Initialize with null keys so the editor knows they exist\nlet data = { category: null, amount: null };\n\ntry {\n    data = JSON.parse(cleanJson);\n} catch (e) {\n    return { valid: false, message: \"⚠️ I couldn't understand the budget details. Please try again.\" };\n}\n\n// 3. Validate Data\nif (!data.category || !data.amount) {\n    return { \n        valid: false, \n        message: `⚠️ *Missing Information*\n---------------------------------\nI couldn't understand the category or amount.\n\n*Please try again like this:*\n💰 \"Budget Food 500\"\n💰 \"Set Transport to 100\"` \n    };\n}\n\n// 4. Success Output\nreturn { \n    valid: true, \n    category: data.category, \n    amount: data.amount,\n    reply_message: `✅ *Budget Updated!*\n---------------------------------\n\nI have set your monthly limit:\n\n📂 *Category:* ${data.category}\n💰 *Amount:* $${data.amount}\n\n---------------------------------\n*Use 'Report' to check your status.*`\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        736
+      ],
+      "id": "a51dbfdd-b812-405f-b330-798db66ba3e0",
+      "name": "Validate Budget"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://oauth2.googleapis.com/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "{{ $env.GOOGLE_CLIENT_ID }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "{{ $env.GOOGLE_CLIENT_SECRET_MAIN }}"
+            },
+            {
+              "name": "grant_type",
+              "value": "refresh_token"
+            },
+            {
+              "name": "refresh_token",
+              "value": "={{ $('Logic: Identify User').first().json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2016,
+        640
+      ],
+      "id": "0afddfbf-e8c7-44c9-8257-5dc98f8734cb",
+      "name": "Get Access Token (Budget)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cbedf29b-c7b5-4c34-851e-81bc25d9d523",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1792,
+        736
+      ],
+      "id": "f89f32e3-5cfa-485b-82fb-e369605c589d",
+      "name": "Check: Is Budget Valid?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Logic: Identify User').first().json.sheet_id }}/values/Budget_Limits!A1:append",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "valueInputOption",
+              "value": "USER_ENTERED"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get Access Token (Budget)').item.json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"values\": [\n    [\n      \"{{ $('Validate Budget').item.json.category }}\",\n      \"{{ $('Validate Budget').item.json.amount }}\"\n    ]\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2240,
+        640
+      ],
+      "id": "eaa9e81a-26c4-463e-8f4d-0ebd4c22117a",
+      "name": "Save Budget"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "799924776547660",
+        "recipientPhoneNumber": "={{ $('Trigger: Incoming Message').first().json.messages[0].from }}",
+        "textBody": "={{ $('Validate Budget').item.json.reply_message }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        2464,
+        640
+      ],
+      "id": "2234c0e2-147a-4828-9c87-4664a80ce9d7",
+      "name": "Send message1",
+      "webhookId": "5a81b633-d9c4-4638-af0d-f6e9a7cf8d29",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "Ox3ujJuG5DJL5jmX",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Logic: Identify User').first().json.sheet_id }}/values:batchGet?ranges=Budget_Limits!A:B&ranges=Transactions!A:E",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get Access Token1').item.json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3808,
+        400
+      ],
+      "id": "26a89f4d-c143-4efb-8326-db5c5a7924b3",
+      "name": "Fetch Budget Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get Data\nconst googleData = $('Fetch Budget Data').first().json;\nconst budgetRows = googleData.valueRanges[0].values || [];\nconst transRows = googleData.valueRanges[1].values || [];\n\n// 2. Parse Budgets\nconst budgets = {};\nfor (let i = 1; i < budgetRows.length; i++) {\n    const row = budgetRows[i];\n    if (row[0] && row[1]) {\n        budgets[row[0]] = parseFloat(row[1].toString().replace('$', '').replace(',', ''));\n    }\n}\n\n// 3. Set \"Current Month\" (Always Today)\nconst currentMonth = new Date().toLocaleString('en-US', { month: 'long' });\nconst spending = {};\n\n// 4. Sum up Sheet Transactions (Only if matches Current Month)\nfor (let i = 1; i < transRows.length; i++) {\n    const row = transRows[i];\n    const month = row[1];\n    const category = row[3];\n    const cost = parseFloat(row[4] || \"0\");\n\n    if (month === currentMonth) {\n        if (!spending[category]) spending[category] = 0;\n        spending[category] += cost;\n    }\n}\n\n// 5. Check the NEW Receipt (Only add if it belongs to Today's Month)\nconst currentReceipt = $('Clean JSON').first().json.spreadsheet_payload.values;\n\n// Grab receipt month (e.g. \"October\")\nconst receiptMonth = currentReceipt[0] ? currentReceipt[0][1] : \"\";\n\nif (receiptMonth === currentMonth) {\n    // It's a current receipt, add it to the live total!\n    currentReceipt.forEach(row => {\n        const category = row[3];\n        const cost = parseFloat(row[4]);\n        if (!spending[category]) spending[category] = 0;\n        spending[category] += cost;\n    });\n}\n\n// 6. Build Message\nconst affectedCategories = [...new Set(currentReceipt.map(r => r[3]))];\nlet budgetMsg = `\\n\\n📊 *Budget Status (${currentMonth}):*`;\n\n// Add a warning if we are viewing a different month than the receipt\nif (receiptMonth !== currentMonth) {\n    budgetMsg += `\\n_(Note: Receipt saved to ${receiptMonth}, so it doesn't affect this report)_`;\n}\n\naffectedCategories.forEach(cat => {\n    const limit = budgets[cat];\n    const spent = spending[cat] || 0;\n    \n    if (limit) {\n        const remaining = limit - spent;\n        budgetMsg += `\\n🟢 *${cat}*: $${remaining.toFixed(2)} left`;\n        budgetMsg += `\\n   └ Spent: $${spent.toFixed(2)} / $${limit}`;\n    } else {\n        budgetMsg += `\\n⚪ *${cat}*: $${spent.toFixed(2)} spent (No Limit)`;\n    }\n});\n\nconst originalMsg = $('Clean JSON').first().json.report_message;\n\nreturn {\n    final_message: originalMsg + budgetMsg\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4032,
+        400
+      ],
+      "id": "95a7c88d-2d0c-423c-8d17-e2dd6e02f3b3",
+      "name": "Calculate Remaining"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "799924776547660",
+        "recipientPhoneNumber": "={{ $('Trigger: Incoming Message').first().json.messages[0].from }}",
+        "textBody": "={{ $('Validate Budget').item.json.reply_message }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        2016,
+        832
+      ],
+      "id": "f70201db-7d78-4571-9f7e-9b5d0b497233",
+      "name": "Send Budget Error",
+      "webhookId": "28ea6555-63c1-405b-bbdf-922056716af8",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "Ox3ujJuG5DJL5jmX",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get the binary data\nconst binaryData = items[0].binary;\nif (!binaryData || !binaryData.data) {\n    return { json: { is_large: false, reason: \"No file found\" } };\n}\n\n// 2. Calculate Size\nconst sizeInput = binaryData.data.fileSize; // Use the specific key 'data'\nlet bytes = 0;\n\nif (typeof sizeInput === 'number') {\n    bytes = sizeInput;\n} else {\n    // Fallback for string parsing if needed\n    const sizeStr = sizeInput.toString().toUpperCase();\n    const num = parseFloat(sizeStr);\n    if (sizeStr.includes('MB')) bytes = num * 1024 * 1024;\n    else if (sizeStr.includes('KB')) bytes = num * 1024;\n    else bytes = num;\n}\n\n// 3. The Limit (1MB)\nconst limit = 1000000;\n\n// 4. RETURN BOTH JSON AND BINARY (Crucial Step!)\nreturn {\n    json: {\n        is_large: bytes > limit,\n        real_bytes: bytes\n    },\n    binary: binaryData // <--- This passes the image to the next node\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        400
+      ],
+      "id": "fde53cbb-6214-47ce-a9d1-9e8bf30bde4d",
+      "name": "Check Size Logic"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ab3963d8-53e4-4feb-ad6a-5ec000bce404",
+              "leftValue": "={{ $json.is_large }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1792,
+        400
+      ],
+      "id": "95cec2aa-dfc3-4366-ae1d-e5f61b93634c",
+      "name": "If"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2240,
+        400
+      ],
+      "id": "935b0180-8c53-4c6e-9f6d-ea7d2e0ebb03",
+      "name": "Merge",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Check if any binary data exists\nif (!items[0].binary || Object.keys(items[0].binary).length === 0) {\n  throw new Error(\"No file found! Check your Merge Node connections.\");\n}\n\n// 2. Dynamically find the file (Grab the first key found)\n// This works even if the file is named 'data', 'file', or 'image'\nconst firstKey = Object.keys(items[0].binary)[0];\nconst file = items[0].binary[firstKey];\n\n// 3. Get the base64 string\nconst base64 = file.data;\nconst mimeType = file.mimeType || 'image/jpeg';\n\n// 4. Output the clean string\nreturn [{\n  json: {\n    my_image: `data:${mimeType};base64,${base64}`\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2464,
+        400
+      ],
+      "id": "48bbd317-265a-43bc-a890-24ba9adbf223",
+      "name": "Convert Image"
+    },
+    {
+      "parameters": {
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Logic: Identify User').first().json.sheet_id }}/values:batchGet?ranges=Budget_Limits!A:B&ranges=Transactions!A:E",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get Access Token (Report)').item.json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1568,
+        1024
+      ],
+      "id": "b9390b25-f7dc-459c-b6ef-5b2aacdad941",
+      "name": "Fetch Report Data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://oauth2.googleapis.com/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "{{ $env.GOOGLE_CLIENT_ID }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "{{ $env.GOOGLE_CLIENT_SECRET_MAIN }}"
+            },
+            {
+              "name": "grant_type",
+              "value": "refresh_token"
+            },
+            {
+              "name": "refresh_token",
+              "value": "={{ $('Logic: Identify User').first().json.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1344,
+        1024
+      ],
+      "id": "0d2cf672-1b0a-4eba-922b-2e229be652c5",
+      "name": "Get Access Token (Report)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get Data\nconst googleData = $('Fetch Report Data').first().json;\nconst budgetRows = googleData.valueRanges[0].values || [];\nconst transRows = googleData.valueRanges[1].values || [];\n\n// 2. Parse Budgets { \"Food\": 500 }\nconst budgets = {};\nfor (let i = 1; i < budgetRows.length; i++) {\n    const row = budgetRows[i];\n    if (row[0] && row[1]) {\n        budgets[row[0]] = parseFloat(row[1].toString().replace(/[$,]/g, ''));\n    }\n}\n\n// 3. Sum Spending for CURRENT Month\nconst currentMonth = new Date().toLocaleString('en-US', { month: 'long' });\nconst spending = {};\nlet totalMonthSpend = 0;\n\nfor (let i = 1; i < transRows.length; i++) {\n    const row = transRows[i];\n    const month = row[1]; // Col B\n    const category = row[3]; // Col D\n    const cost = parseFloat(row[4] || \"0\");\n\n    if (month === currentMonth) {\n        if (!spending[category]) spending[category] = 0;\n        spending[category] += cost;\n        totalMonthSpend += cost;\n    }\n}\n\n// 4. Build Text Message\nlet msg = `📊 *Spending Report (${currentMonth})*\\n---------------------------------\\n`;\nconst allCats = new Set([...Object.keys(budgets), ...Object.keys(spending)]);\n\nallCats.forEach(cat => {\n    const limit = budgets[cat] || 0;\n    const spent = spending[cat] || 0;\n    \n    let icon = \"⚪\";\n    if (limit > 0) {\n        const percent = spent / limit;\n        if (percent < 0.8) icon = \"🟢\";\n        else if (percent <= 1.0) icon = \"Oc\";\n        else icon = \"🔴\";\n    }\n\n    msg += `\\n${icon} *${cat}*`;\n    if (limit > 0) {\n        msg += `\\n   └ $${spent.toFixed(2)} / $${limit}`;\n    } else {\n        msg += `\\n   └ $${spent.toFixed(2)}`;\n    }\n});\nmsg += `\\n\\n💰 *Total:* $${totalMonthSpend.toFixed(2)}`;\n\n// 5. Build Chart URL (QuickChart)\nconst labels = Object.keys(spending);\nconst data = Object.values(spending);\n\nconst chartConfig = {\n  type: 'doughnut',\n  data: {\n    labels: labels,\n    datasets: [{ data: data, backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'] }]\n  },\n  options: {\n    title: { display: true, text: `Spending: $${totalMonthSpend.toFixed(2)}` },\n    legend: { position: 'right' }\n  }\n};\n\nconst chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&w=500&h=300`;\n\nreturn { report_message: msg, chart_url: chartUrl };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        1024
+      ],
+      "id": "2df6dbc4-4840-4b0c-8e7e-b3de63d6f884",
+      "name": "Generate Report"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "799924776547660",
+        "recipientPhoneNumber": "={{ $('Trigger: Incoming Message').first().json.messages[0].from }}",
+        "messageType": "image",
+        "mediaLink": "={{ $json.chart_url }}",
+        "additionalFields": {
+          "mediaCaption": "={{ $json.report_message }}"
+        }
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        2016,
+        1024
+      ],
+      "id": "0edf0f2c-1922-4bb0-b570-a48a0a6a9fb8",
+      "name": "Send message2",
+      "webhookId": "aa1eca88-bfef-40d9-8400-73724effa03b",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "Ox3ujJuG5DJL5jmX",
+          "name": "WhatsApp account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Trigger: Incoming Message": {
+      "main": [
+        [
+          {
+            "node": "DB: Read User File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Read User File": {
+      "main": [
+        [
+          {
+            "node": "Logic: Identify User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Logic: Identify User": {
+      "main": [
+        [
+          {
+            "node": "Router: User Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router: User Status": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp: Send Auth Invite",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WhatsApp: Send Auth Invite",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check: Image or Text?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp: Send Auth Invite": {
+      "main": [
+        [
+          {
+            "node": "Send message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router: Text Commands": {
+      "main": [
+        [
+          {
+            "node": "AI: Parse Budget",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Access Token (Report)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WhatsApp: Send Menu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check: Image or Text?": {
+      "main": [
+        [
+          {
+            "node": "Get Media URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Router: Text Commands",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Media URL": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Check Size Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resize for OCR": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OCR Scan": {
+      "main": [
+        [
+          {
+            "node": "AI Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Processor": {
+      "main": [
+        [
+          {
+            "node": "Get Access Token1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean JSON": {
+      "main": [
+        [
+          {
+            "node": "Save to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Access Token1": {
+      "main": [
+        [
+          {
+            "node": "Clean JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Sheet": {
+      "main": [
+        [
+          {
+            "node": "Fetch Budget Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI: Parse Budget": {
+      "main": [
+        [
+          {
+            "node": "Validate Budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Budget": {
+      "main": [
+        [
+          {
+            "node": "Check: Is Budget Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check: Is Budget Valid?": {
+      "main": [
+        [
+          {
+            "node": "Get Access Token (Budget)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Budget Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Access Token (Budget)": {
+      "main": [
+        [
+          {
+            "node": "Save Budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Budget": {
+      "main": [
+        [
+          {
+            "node": "Send message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Budget Data": {
+      "main": [
+        [
+          {
+            "node": "Calculate Remaining",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Remaining": {
+      "main": [
+        [
+          {
+            "node": "Send Receipt Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Size Logic": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Resize for OCR",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Convert Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Image": {
+      "main": [
+        [
+          {
+            "node": "OCR Scan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Access Token (Report)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Report Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Report Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Report": {
+      "main": [
+        [
+          {
+            "node": "Send message2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "75404a53-9491-4ed7-826a-cddd52dee445",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0cbda407c1f0710a8bcbc6a5184d5adba30950eb714dcd47c31af19c578aa4a2"
+  },
+  "id": "vFyeooqZhnlESlJC",
+  "tags": []
+}
